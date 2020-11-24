@@ -148,72 +148,85 @@ private:
         // 重载访问运算符
         void operator() () {
             if (m_ptrPool == nullptr) return;
-            std::function<void()> task;  // 基础函数对象，用于取任务并执行
-            bool bGetTask = false;
+
             if (m_ptrPool->m_bSelfRegulatingModel == false) {
-                while (!m_ptrPool->m_bStop && m_bIsWork) {
-                    {
-                        // 阻塞当前线程，等待被唤醒
-                        std::unique_lock<std::mutex> lock(m_ptrPool->m_ControlMtx);
-                        // 在线程池停止工作或者任务队列不空时确认被唤醒
-                        m_ptrPool->m_CondVar.wait(lock, [this]() {
-                            return m_ptrPool->m_bStop || !m_ptrPool->m_queTasks.empty();
-                        });
-                        // 线程池停止工作并且没有任务可取时工作线程可以结束
-                        if (m_ptrPool->m_bStop && m_ptrPool->m_queTasks.empty()) m_bIsWork = false;
-                        else bGetTask = m_ptrPool->m_queTasks.pop(task);
-                    }
-                    // 任务取出成功，执行它
-                    if (bGetTask) {
-                        task();
-                        bGetTask = false;
-                    }
-                }
+                WorkFixedSize();
             }
             else {
-                while (!m_ptrPool->m_bStop && m_bIsWork) {
-                    {
-                        // 阻塞当前线程，等待被唤醒
-                        std::unique_lock<std::mutex> lock(m_ptrPool->m_ControlMtx);
-                        // 在线程池停止工作或者任务队列不空时确认被唤醒
-                        bool bWaitRes = m_ptrPool->m_CondVar.wait_for(lock, m_ptrPool->m_durMaxIdleTime, [this]() {
-                            return m_ptrPool->m_bStop || !m_ptrPool->m_queTasks.empty();
-                        });
-                        // 正常被唤醒
-                        if (bWaitRes) {
-                            // 线程池停止工作并且没有任务可取时工作线程可以结束
-                            if (m_ptrPool->m_bStop && m_ptrPool->m_queTasks.empty()) m_bIsWork = false;
-                            else {
-                                bGetTask = m_ptrPool->m_queTasks.pop(task);
-                                // 如果还有很多任务没有完成，开始扩容
-                                while (!m_ptrPool->m_queThreads.empty() &&
-                                       m_ptrPool->m_queTasks.size() > 3 * m_ptrPool->m_nWorkThread) {
-                                    //std::cout << "Threads: " << m_ptrPool->m_nWorkThread << ", Tasks: " << m_ptrPool->m_queTasks.size() << std::endl;
-                                    int nThID = m_ptrPool->m_queThreads.front();
-                                    m_ptrPool->m_queThreads.pop();
-                                    m_ptrPool->m_vecThreadPool[nThID] = std::thread(WorkThreadProc(nThID, m_ptrPool));
-                                }
-                            }
-                        }
-                        // 等待超时
-                        else {
-                            // 工作线程个数比任务数还多，但还需要一定的线程
-                            if (m_ptrPool->m_nWorkThread > m_ptrPool->m_queTasks.size() &&
-                                m_ptrPool->m_nWorkThread > ThreadPool::MachineThreadNum / 2) {
-                                //std::cout << "Threads: " << m_ptrPool->m_nWorkThread << ", Tasks: " << m_ptrPool->m_queTasks.size() << std::endl;
-                                m_ptrPool->m_queThreads.push(m_nID);
-                                m_bIsWork = false;
-                            }
-                        }
-                    }
-                    // 任务取出成功，执行它
-                    if (bGetTask) {
-                        task();
-                        bGetTask = false;
-                    }
-                }
+                WorkSelfRegulating();
             }
             --(m_ptrPool->m_nWorkThread);
+        }
+
+        void WorkFixedSize() {
+            std::function<void()> task;  // 基础函数对象，用于取任务并执行
+            bool bGetTask = false;
+
+            while (!m_ptrPool->m_bStop && m_bIsWork) {
+                {
+                    // 阻塞当前线程，等待被唤醒
+                    std::unique_lock<std::mutex> lock(m_ptrPool->m_ControlMtx);
+                    // 在线程池停止工作或者任务队列不空时确认被唤醒
+                    m_ptrPool->m_CondVar.wait(lock, [this]() {
+                        return m_ptrPool->m_bStop || !m_ptrPool->m_queTasks.empty();
+                    });
+                    // 线程池停止工作并且没有任务可取时工作线程可以结束
+                    if (m_ptrPool->m_bStop && m_ptrPool->m_queTasks.empty()) m_bIsWork = false;
+                    else bGetTask = m_ptrPool->m_queTasks.pop(task);
+                }
+                // 任务取出成功，执行它
+                if (bGetTask) {
+                    task();
+                    bGetTask = false;
+                }
+            }
+        }
+
+        void WorkSelfRegulating() {
+            std::function<void()> task;  // 基础函数对象，用于取任务并执行
+            bool bGetTask = false;
+
+            while (!m_ptrPool->m_bStop && m_bIsWork) {
+                {
+                    // 阻塞当前线程，等待被唤醒
+                    std::unique_lock<std::mutex> lock(m_ptrPool->m_ControlMtx);
+                    // 在线程池停止工作或者任务队列不空时确认被唤醒
+                    bool bWaitRes = m_ptrPool->m_CondVar.wait_for(lock, m_ptrPool->m_durMaxIdleTime, [this]() {
+                        return m_ptrPool->m_bStop || !m_ptrPool->m_queTasks.empty();
+                    });
+                    // 正常被唤醒
+                    if (bWaitRes) {
+                        // 线程池停止工作并且没有任务可取时工作线程可以结束
+                        if (m_ptrPool->m_bStop && m_ptrPool->m_queTasks.empty()) m_bIsWork = false;
+                        else {
+                            bGetTask = m_ptrPool->m_queTasks.pop(task);
+                            // 如果还有很多任务没有完成，开始扩容
+                            while (!m_ptrPool->m_queThreads.empty() &&
+                                   m_ptrPool->m_queTasks.size() > 3 * m_ptrPool->m_nWorkThread) {
+                                //std::cout << "Threads: " << m_ptrPool->m_nWorkThread << ", Tasks: " << m_ptrPool->m_queTasks.size() << std::endl;
+                                int nThID = m_ptrPool->m_queThreads.front();
+                                m_ptrPool->m_queThreads.pop();
+                                m_ptrPool->m_vecThreadPool[nThID] = std::thread(WorkThreadProc(nThID, m_ptrPool));
+                            }
+                        }
+                    }
+                        // 等待超时
+                    else {
+                        // 工作线程个数比任务数还多，但还需要一定的线程
+                        if (m_ptrPool->m_nWorkThread > m_ptrPool->m_queTasks.size() &&
+                            m_ptrPool->m_nWorkThread > ThreadPool::MachineThreadNum / 2) {
+                            //std::cout << "Threads: " << m_ptrPool->m_nWorkThread << ", Tasks: " << m_ptrPool->m_queTasks.size() << std::endl;
+                            m_ptrPool->m_queThreads.push(m_nID);
+                            m_bIsWork = false;
+                        }
+                    }
+                }
+                // 任务取出成功，执行它
+                if (bGetTask) {
+                    task();
+                    bGetTask = false;
+                }
+            }
         }
     private:
         int m_nID; //线程ID

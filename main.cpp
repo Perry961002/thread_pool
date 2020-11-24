@@ -39,7 +39,10 @@ int multiply_return(const int a, const int b) {
 
 void example() {
     // 创建3个线程的线程池
+    // ThreadPool pool(3);
     ThreadPool pool(std::chrono::milliseconds(10000));
+
+    std::cout << "Machine Threads: " << ThreadPool::MachineThreadNum << std::endl;
 
     auto t1 = std::chrono::steady_clock::now();
     // 提交乘法操作，总共30个
