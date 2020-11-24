@@ -37,7 +37,7 @@ public:
     //队列添加元素
     void push(T& t) {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_queue.push(t);
+        m_queue.emplace(t);
     }
 
     //队列取出元素
@@ -69,7 +69,7 @@ public:
         if (nFixedThreadPoolSize > ThreadPool::MachineThreadNum) nFixedThreadPoolSize = ThreadPool::MachineThreadNum;
         m_vecThreadPool = std::vector<std::thread>(nFixedThreadPoolSize);
         for (int i = 0; i < nFixedThreadPoolSize; ++i) {
-            m_vecThreadPool[i] = std::thread(WorkThreadProc(i, this));
+            m_vecThreadPool.emplace(m_vecThreadPool.begin() + i, std::thread(WorkThreadProc(i, this)));
         }
     }
 
@@ -78,7 +78,7 @@ public:
         int nSize = 2 * ThreadPool::MachineThreadNum;
         m_vecThreadPool = std::vector<std::thread>(nSize);
         for (int i = 0; i < ThreadPool::MachineThreadNum; ++i) {
-            m_vecThreadPool[i] = std::thread(WorkThreadProc(i, this));
+            m_vecThreadPool.emplace(m_vecThreadPool.begin() + i, std::thread(WorkThreadProc(i, this)));
         }
         for (int i = ThreadPool::MachineThreadNum; i < nSize; ++i) {
             m_queThreads.push(i);
@@ -96,8 +96,8 @@ public:
     ~ThreadPool() {
         m_bStop = true;
         m_CondVar.notify_all();  // 通知所以阻塞的线程来清空任务队列并退出
-        for (int i = 0; i < m_vecThreadPool.size(); ++i) {
-            if (m_vecThreadPool[i].joinable()) m_vecThreadPool[i].join();
+        for (auto &th : m_vecThreadPool) {
+            if (th.joinable()) th.join();
         }
     }
 
@@ -206,7 +206,7 @@ private:
                                 //std::cout << "Threads: " << m_ptrPool->m_nWorkThread << ", Tasks: " << m_ptrPool->m_queTasks.size() << std::endl;
                                 int nThID = m_ptrPool->m_queThreads.front();
                                 m_ptrPool->m_queThreads.pop();
-                                m_ptrPool->m_vecThreadPool[nThID] = std::thread(WorkThreadProc(nThID, m_ptrPool));
+                                m_ptrPool->m_vecThreadPool.emplace(m_ptrPool->m_vecThreadPool.begin() + nThID, std::thread(WorkThreadProc(nThID, m_ptrPool)));
                             }
                         }
                     }
