@@ -105,6 +105,7 @@ public:
     template<typename F, typename...Args>
     auto submit(F&& f, Args&&... args) -> std::future<decltype(f(args...))> {
         // 连接函数和参数定义
+        // forward被用来保持参数的右值属性不变
         std::function<decltype(f(args...))()> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
         // 封装获取任务对象，方便另外一个线程查看结果

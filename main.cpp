@@ -12,7 +12,12 @@ auto rnd = std::bind(dist, mt);
 
 //设置线程睡眠时间
 void simulate_hard_computation() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000 + rnd()));
+    int nWaitTime = 1000 + rnd();
+    auto tBegin = std::chrono::steady_clock::now();
+    while (true) {
+        auto tNow = std::chrono::steady_clock::now();
+        if (std::chrono::duration<double,std::milli>(tNow - tBegin).count() >= nWaitTime) break;
+    }
 }
 
 // 添加两个数字的简单函数并打印结果
@@ -69,7 +74,7 @@ void example() {
     std::cout << "Last operation result is equals to " << res << std::endl;
 
     //微妙级
-    double dr_us=std::chrono::duration<double,std::micro>(t2-t1).count();
+    double dr_us = std::chrono::duration<double,std::micro>(t2-t1).count();
     std::cout << "submit 500 * multiply: "<< dr_us << " microsecond" << std::endl;
 }
 
